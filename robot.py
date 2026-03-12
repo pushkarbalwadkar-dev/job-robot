@@ -1,17 +1,17 @@
 import requests
 import pandas as pd
 from datetime import datetime
-import openai
-import os
-from config import KEYWORDS, PREFERRED_LOCATIONS, MAX_JOBS_PER_SITE
-
-openai.api_key = os.getenv("OPENAI_API_KEY")
+from config import KEYWORDS, PREFERRED_LOCATIONS, MAX_JOBS
 
 jobs = []
 
-def location_allowed(location):
+def keyword_match(title):
+    title = title.lower()
+    return any(k in title for k in KEYWORDS)
 
-    if location is None:
+def location_match(location):
+
+    if not location:
         return True
 
     location = location.lower()
@@ -23,153 +23,95 @@ def location_allowed(location):
     return False
 
 
-def keyword_match(title):
+def add_job(company, title, location, link):
 
-    title = title.lower()
-
-    for k in KEYWORDS:
-        if k.lower() in title:
-            return True
-
-    return False
-
-
-def generate_cover_letter(title, company):
-
-    prompt = f"""
-Write a short professional cover letter for a job application.
-
-Role: {title}
-Company: {company}
-
-Candidate skills:
-Salesforce Marketing Cloud, SFMC Developer, Automation Studio,
-Journey Builder, Email Studio.
-
-Keep it under 120 words.
-"""
-
-    try:
-
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=150
-        )
-
-        return response.choices[0].message.content
-
-    except Exception:
-
-        return "Generated cover letter unavailable"
+    jobs.append({
+        "company": company,
+        "title": title,
+        "location": location,
+        "link": link,
+        "date": datetime.now()
+    })
 
 
 def fetch_remoteok():
 
-    url = "https://remoteok.com/api"
+    print("Fetching RemoteOK")
 
     try:
 
-        data = requests.get(url).json()
-
-        count = 0
+        data = requests.get("https://remoteok.com/api").json()
 
         for job in data:
 
-            if count > MAX_JOBS_PER_SITE:
-                break
-
             title = job.get("position")
             company = job.get("company")
-            link = job.get("url")
             location = job.get("location")
+            link = job.get("url")
 
             if not title:
                 continue
 
-            if not keyword_match(title):
-                continue
-
-            if not location_allowed(location):
-                continue
-
-            cover = generate_cover_letter(title, company)
-
-            jobs.append({
-                "company": company,
-                "title": title,
-                "location": location,
-                "link": link,
-                "cover_letter": cover,
-                "date": datetime.now()
-            })
-
-            count += 1
+            add_job(company, title, location, link)
 
     except Exception as e:
-
         print("RemoteOK error:", e)
 
 
 def fetch_arbeitnow():
 
-    url = "https://www.arbeitnow.com/api/job-board-api"
+    print("Fetching Arbeitnow")
 
     try:
 
-        data = requests.get(url).json()["data"]
+        data = requests.get("https://www.arbeitnow.com/api/job-board-api").json()
 
-        count = 0
-
-        for job in data:
-
-            if count > MAX_JOBS_PER_SITE:
-                break
+        for job in data["data"]:
 
             title = job.get("title")
             company = job.get("company_name")
             location = job.get("location")
             link = job.get("url")
 
-            if not keyword_match(title):
-                continue
-
-            if not location_allowed(location):
-                continue
-
-            cover = generate_cover_letter(title, company)
-
-            jobs.append({
-                "company": company,
-                "title": title,
-                "location": location,
-                "link": link,
-                "cover_letter": cover,
-                "date": datetime.now()
-            })
-
-            count += 1
+            add_job(company, title, location, link)
 
     except Exception as e:
-
         print("Arbeitnow error:", e)
 
 
-print("Fetching jobs...")
+def filter_jobs():
+
+    filtered = []
+
+    for job in jobs:
+
+        if not keyword_match(job["title"]):
+            continue
+
+        if not location_match(job["location"]):
+            continue
+
+        filtered.append(job)
+
+    return filtered
+
+
+print("Starting job robot")
 
 fetch_remoteok()
 fetch_arbeitnow()
 
-df = pd.DataFrame(jobs)
+print("Total jobs fetched:", len(jobs))
 
-if len(df) > 0:
+filtered_jobs = filter_jobs()
 
-    df.drop_duplicates(subset=["title", "company"], inplace=True)
+print("Jobs after filtering:", len(filtered_jobs))
 
-    df.to_csv("jobs.csv", index=False)
+df = pd.DataFrame(filtered_jobs)
 
-    print("Saved", len(df), "jobs")
+if len(df) > MAX_JOBS:
+    df = df.head(MAX_JOBS)
 
-else:
+df.to_csv("jobs.csv", index=False)
 
-    print("No jobs found today")
+print("Saved jobs.csv successfully")
