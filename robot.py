@@ -11,7 +11,13 @@ import openai
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_KEY
 CV_PATH = "Pushkar_Balwadkar_CV.pdf"
-KEYWORDS = ["Salesforce Marketing Cloud", "SFMC Developer", "Salesforce Marketing Cloud Consultant", "SFMC Specialist", "Salesforce Architect"]
+KEYWORDS = [
+    "Salesforce Marketing Cloud",
+    "SFMC Developer",
+    "Salesforce Marketing Cloud Consultant",
+    "SFMC Specialist",
+    "Salesforce Architect"
+]
 
 # ---------- LOGGING FUNCTION ----------
 def log_application(company, job_title, location, link):
@@ -26,12 +32,16 @@ def generate_cover_letter(job_title, company_name, job_description):
     Use these details: {job_description}.
     Highlight Salesforce Marketing Cloud experience.
     """
-    response = openai.Completion.create(
-        engine="text-davinci-003",
-        prompt=prompt,
-        max_tokens=250
-    )
-    return response.choices[0].text.strip()
+    try:
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            max_tokens=250
+        )
+        return response.choices[0].text.strip()
+    except Exception as e:
+        print(f"OpenAI API error: {e}")
+        return "Dear Hiring Manager, I am very interested in this position."
 
 # ---------- START BROWSER ----------
 chrome_options = Options()
@@ -45,40 +55,74 @@ CREDENTIALS = {
     "linkedin": (os.getenv("LINKEDIN_EMAIL"), os.getenv("LINKEDIN_PASSWORD")),
     "glassdoor": (os.getenv("GLASSDOOR_EMAIL"), os.getenv("GLASSDOOR_PASSWORD")),
     "indeed": (os.getenv("INDEED_EMAIL"), os.getenv("INDEED_PASSWORD")),
-    # Add more secrets if other sites require login
+    # Add more sites here if needed
 }
 
-# ---------- SITE SPECIFIC CONFIG ----------
+# ---------- SITE CONFIG ----------
 SITE_CONFIG = {
-    "linkedin": {"login_url":"https://www.linkedin.com/login", "username_field":"username", "password_field":"password", "job_class":"job-card-list__title", "apply_button_class":"jobs-apply-button", "company_name":"LinkedIn Company"},
-    "glassdoor": {"login_url":"https://www.glassdoor.com/profile/login_input.htm", "username_field":"userEmail", "password_field":"userPassword", "job_class":"jobLink", "apply_button_class":None, "company_name":"Glassdoor Company"},
-    "indeed": {"login_url":"https://secure.indeed.com/account/login", "username_field":"login-email-input", "password_field":"login-password-input", "job_class":"jobTitle", "apply_button_class":"iaP", "company_name":"Indeed Company"},
-    # Add config for other sites
+    "linkedin": {
+        "login_url": "https://www.linkedin.com/login",
+        "username_field": "username",
+        "password_field": "password",
+        "job_class": "job-card-list__title",
+        "apply_button_class": "jobs-apply-button",
+        "company_name": "LinkedIn Company"
+    },
+    "glassdoor": {
+        "login_url": "https://www.glassdoor.com/profile/login_input.htm",
+        "username_field": "userEmail",
+        "password_field": "userPassword",
+        "job_class": "jobLink",
+        "apply_button_class": None,
+        "company_name": "Glassdoor Company"
+    },
+    "indeed": {
+        "login_url": "https://secure.indeed.com/account/login",
+        "username_field": "login-email-input",
+        "password_field": "login-password-input",
+        "job_class": "jobTitle",
+        "apply_button_class": "iaP",
+        "company_name": "Indeed Company"
+    },
+    # Add more sites as needed
 }
 
 # ---------- LOGIN FUNCTION ----------
 def login_site(site_name):
-    if site_name not in SITE_CONFIG or site_name not in CREDENTIALS:
-        print(f"No login info for {site_name}, skipping login")
+    if site_name not in SITE_CONFIG:
+        print(f"No config for {site_name}, skipping login")
+        return
+    if site_name not in CREDENTIALS:
+        print(f"No credentials for {site_name}, skipping login")
         return
     email, password = CREDENTIALS[site_name]
+    if not email or not password:
+        print(f"Email or password missing for {site_name}, skipping login")
+        return
+
     config = SITE_CONFIG[site_name]
     driver.get(config["login_url"])
     time.sleep(2)
-    driver.find_element(By.ID, config["username_field"]).send_keys(email)
-    driver.find_element(By.ID, config["password_field"]).send_keys(password)
-    driver.find_element(By.XPATH, "//button[@type='submit']").click()
-    time.sleep(3)
-    print(f"Logged in to {site_name}")
 
-# ---------- SEARCH AND APPLY FUNCTION ----------
+    try:
+        username_elem = driver.find_element(By.ID, config["username_field"])
+        password_elem = driver.find_element(By.ID, config["password_field"])
+        username_elem.send_keys(email)
+        password_elem.send_keys(password)
+        driver.find_element(By.XPATH, "//button[@type='submit']").click()
+        time.sleep(3)
+        print(f"Logged in to {site_name}")
+    except Exception as e:
+        print(f"Could not log in to {site_name}: {e}")
+
+# ---------- SEARCH AND APPLY ----------
 def search_and_apply(site_name, keyword):
     if site_name not in SITE_CONFIG:
         print(f"No config for {site_name}, skipping")
         return
     config = SITE_CONFIG[site_name]
-    
-    # Create search URL
+
+    # Build search URL
     if site_name == "linkedin":
         search_url = f"https://www.linkedin.com/jobs/search/?keywords={keyword}&f_LF=f_AL"
     elif site_name == "glassdoor":
@@ -91,8 +135,14 @@ def search_and_apply(site_name, keyword):
 
     driver.get(search_url)
     time.sleep(3)
-    jobs = driver.find_elements(By.CLASS_NAME, config["job_class"])
-    for job_el in jobs[:3]:  # first 3 jobs per site per keyword
+
+    try:
+        jobs = driver.find_elements(By.CLASS_NAME, config["job_class"])
+    except Exception as e:
+        print(f"Could not find jobs for {site_name}: {e}")
+        return
+
+    for job_el in jobs[:3]:  # first 3 jobs for safety
         try:
             job_title = job_el.text
             job_link = job_el.get_attribute("href")
@@ -100,8 +150,8 @@ def search_and_apply(site_name, keyword):
             location = "Remote"
             job_description = "Job description placeholder"
             cover_letter = generate_cover_letter(job_title, company_name, job_description)
-            
-            # EASY APPLY SIMULATION
+
+            # Easy apply simulation
             if config["apply_button_class"]:
                 try:
                     job_el.click()
@@ -111,14 +161,16 @@ def search_and_apply(site_name, keyword):
                     time.sleep(2)
                     driver.find_element(By.XPATH, "//input[@type='file']").send_keys(os.path.abspath(CV_PATH))
                     time.sleep(1)
-                    textarea = driver.find_element(By.TAG_NAME, "textarea")
-                    textarea.send_keys(cover_letter)
-                    time.sleep(1)
+                    try:
+                        textarea = driver.find_element(By.TAG_NAME, "textarea")
+                        textarea.send_keys(cover_letter)
+                    except:
+                        pass
                     driver.find_element(By.XPATH, "//button[contains(text(),'Submit')]").click()
                     time.sleep(2)
-                except:
-                    print(f"Skipped auto-apply for {job_title} at {company_name}")
-            
+                except Exception as e:
+                    print(f"Skipped auto-apply for {job_title} at {company_name}: {e}")
+
             log_application(company_name, job_title, location, job_link)
             print(f"Applied to: {job_title} at {company_name}")
         except Exception as e:
