@@ -1,23 +1,46 @@
 name: SFMC Job Robot
 
-# When to run the robot
+# Schedule to run daily at 2:00 AM, and also allows manual trigger
 on:
   schedule:
-    - cron: "0 2 * * *"  # every day at 2:00 AM
-  workflow_dispatch:  # also allows manual run
+    - cron: "0 2 * * *"
+  workflow_dispatch:
 
 jobs:
   apply:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout repository
       - uses: actions/checkout@v3
 
-      - name: Install Python
+      # 2️⃣ Set up Python
+      - name: Set up Python
         uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
 
+      # 3️⃣ Install dependencies
       - name: Install Requirements
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run Robot
+      # 4️⃣ Run Robot
+      - name: Run SFMC Job Robot
+        env:
+          LINKEDIN_EMAIL: ${{ secrets.LINKEDIN_EMAIL }}
+          LINKEDIN_PASSWORD: ${{ secrets.LINKEDIN_PASSWORD }}
+          GLASSDOOR_EMAIL: ${{ secrets.GLASSDOOR_EMAIL }}
+          GLASSDOOR_PASSWORD: ${{ secrets.GLASSDOOR_PASSWORD }}
+          INDEED_EMAIL: ${{ secrets.INDEED_EMAIL }}
+          INDEED_PASSWORD: ${{ secrets.INDEED_PASSWORD }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python robot.py
+
+      # 5️⃣ Upload applied_jobs.csv for download
+      - name: Upload applied_jobs.csv
+        uses: actions/upload-artifact@v3
+        with:
+          name: applied-jobs
+          path: applied_jobs.csv
