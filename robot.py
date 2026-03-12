@@ -5,6 +5,8 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import openai
 
 # ---------- CONFIG ----------
@@ -21,9 +23,13 @@ KEYWORDS = [
 
 # ---------- LOGGING FUNCTION ----------
 def log_application(company, job_title, location, link):
-    with open('applied_jobs.csv', mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([company, job_title, location, datetime.now().strftime("%Y-%m-%d %H:%M"), link])
+    if job_title and link:
+        with open('applied_jobs.csv', mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([company, job_title, location, datetime.now().strftime("%Y-%m-%d %H:%M"), link])
+        print(f"Logged application: {job_title} at {company}")
+    else:
+        print(f"Skipped logging because title or link missing for {company}")
 
 # ---------- AI COVER LETTER ----------
 def generate_cover_letter(job_title, company_name, job_description):
@@ -55,7 +61,6 @@ CREDENTIALS = {
     "linkedin": (os.getenv("LINKEDIN_EMAIL"), os.getenv("LINKEDIN_PASSWORD")),
     "glassdoor": (os.getenv("GLASSDOOR_EMAIL"), os.getenv("GLASSDOOR_PASSWORD")),
     "indeed": (os.getenv("INDEED_EMAIL"), os.getenv("INDEED_PASSWORD")),
-    # Add more sites here if needed
 }
 
 # ---------- SITE CONFIG ----------
@@ -84,26 +89,20 @@ SITE_CONFIG = {
         "apply_button_class": "iaP",
         "company_name": "Indeed Company"
     },
-    # Add more sites as needed
 }
 
 # ---------- LOGIN FUNCTION ----------
 def login_site(site_name):
-    if site_name not in SITE_CONFIG:
-        print(f"No config for {site_name}, skipping login")
-        return
-    if site_name not in CREDENTIALS:
-        print(f"No credentials for {site_name}, skipping login")
+    if site_name not in SITE_CONFIG or site_name not in CREDENTIALS:
+        print(f"Skipping login for {site_name} (missing config or credentials)")
         return
     email, password = CREDENTIALS[site_name]
     if not email or not password:
-        print(f"Email or password missing for {site_name}, skipping login")
+        print(f"Skipping login for {site_name} (email/password missing)")
         return
-
     config = SITE_CONFIG[site_name]
     driver.get(config["login_url"])
     time.sleep(2)
-
     try:
         username_elem = driver.find_element(By.ID, config["username_field"])
         password_elem = driver.find_element(By.ID, config["password_field"])
@@ -118,7 +117,7 @@ def login_site(site_name):
 # ---------- SEARCH AND APPLY ----------
 def search_and_apply(site_name, keyword):
     if site_name not in SITE_CONFIG:
-        print(f"No config for {site_name}, skipping")
+        print(f"Skipping {site_name} (no config)")
         return
     config = SITE_CONFIG[site_name]
 
@@ -134,24 +133,27 @@ def search_and_apply(site_name, keyword):
         return
 
     driver.get(search_url)
-    time.sleep(3)
 
+    # ---------- EXPLICIT WAIT FOR JOB CARDS ----------
     try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CLASS_NAME, config["job_class"]))
+        )
         jobs = driver.find_elements(By.CLASS_NAME, config["job_class"])
     except Exception as e:
-        print(f"Could not find jobs for {site_name}: {e}")
+        print(f"Could not load jobs for {site_name}: {e}")
         return
 
-    for job_el in jobs[:3]:  # first 3 jobs for safety
+    for job_el in jobs[:3]:  # first 3 jobs per keyword
         try:
-            job_title = job_el.text
-            job_link = job_el.get_attribute("href")
+            job_title = job_el.text.strip()
+            job_link = job_el.get_attribute("href") or job_el.get_attribute("data-job-link") or None
             company_name = config["company_name"]
             location = "Remote"
             job_description = "Job description placeholder"
             cover_letter = generate_cover_letter(job_title, company_name, job_description)
 
-            # Easy apply simulation
+            # Easy Apply Simulation
             if config["apply_button_class"]:
                 try:
                     job_el.click()
@@ -172,9 +174,8 @@ def search_and_apply(site_name, keyword):
                     print(f"Skipped auto-apply for {job_title} at {company_name}: {e}")
 
             log_application(company_name, job_title, location, job_link)
-            print(f"Applied to: {job_title} at {company_name}")
         except Exception as e:
-            print(f"Error applying to job: {e}")
+            print(f"Error processing job: {e}")
 
 # ---------- MAIN LOOP ----------
 with open("sites.txt", "r") as f:
