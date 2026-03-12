@@ -1,7 +1,16 @@
 import smtplib
 import pandas as pd
 import os
-from email.mime.text import MIMEText
+
+if not os.path.exists("jobs.csv"):
+    print("jobs.csv not found")
+    exit()
+
+df = pd.read_csv("jobs.csv")
+
+if df.empty:
+    print("No jobs today. Email not sent.")
+    exit()
 
 EMAIL = os.getenv("EMAIL_USER")
 PASSWORD = os.getenv("EMAIL_PASS")
