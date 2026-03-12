@@ -6,11 +6,7 @@ KEYWORDS = [
     "Salesforce Architect"
 ]
 
-PREFERRED_LOCATIONS = [
-    "remote",
-    "Paris",
-    "France",
-    "europe",
+PREFERRED_LOCATIONS = ["remote", "Paris", "France", "europe",
     "Netherlands",
     "Luxembourg",
     "Poland",
@@ -23,4 +19,4 @@ PREFERRED_LOCATIONS = [
     "UAE"
 ]
 
-MAX_JOBS_PER_SITE = 50
+MAX_RESULTS = 100
