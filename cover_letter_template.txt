@@ -1,0 +1,14 @@
+Dear Hiring Manager,
+
+I am excited to apply for the {job_title} role at {company}.
+
+I have strong experience in Salesforce Marketing Cloud including
+Journey Builder, Automation Studio, SQL and AMPscript.
+
+Your job description matches my background in marketing automation
+and data-driven customer journeys.
+
+I would love to contribute to your team.
+
+Best regards
+Pushkar BALWADKAR
