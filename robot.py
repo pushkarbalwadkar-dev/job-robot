@@ -1,180 +1,175 @@
 import requests
-from bs4 import BeautifulSoup
-import csv
-import os
+import pandas as pd
 from datetime import datetime
+import openai
+import os
+from config import KEYWORDS, PREFERRED_LOCATIONS, MAX_JOBS_PER_SITE
 
-# ---------------- CONFIG ----------------
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-CV_PATH = "Pushkar_Balwadkar_CV.pdf"
+jobs = []
 
-KEYWORDS = [
-    "Salesforce Marketing Cloud",
-    "SFMC Developer",
-    "Salesforce Marketing Cloud Consultant",
-    "SFMC Specialist",
-    "Salesforce Architect"
-]
+def location_allowed(location):
 
-PREFERRED_LOCATIONS = ["remote", "india", "usa", "europe"]
+    if location is None:
+        return True
 
-MAX_JOBS_PER_SITE = 30
+    location = location.lower()
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
+    for loc in PREFERRED_LOCATIONS:
+        if loc in location:
+            return True
 
-# ---------------- CSV SETUP ----------------
+    return False
 
-if not os.path.exists("applied_jobs.csv"):
-    with open("applied_jobs.csv","w",newline="",encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Company","Job Title","Location","Date","Link"])
 
+def keyword_match(title):
 
-def log_job(company,title,location,link):
+    title = title.lower()
 
-    with open("applied_jobs.csv","a",newline="",encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            company,
-            title,
-            location,
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
-            link
-        ])
+    for k in KEYWORDS:
+        if k.lower() in title:
+            return True
 
-    print("Logged:",title)
+    return False
 
 
-# ---------------- LINKEDIN SEARCH ----------------
+def generate_cover_letter(title, company):
 
-def search_linkedin(keyword):
+    prompt = f"""
+Write a short professional cover letter for a job application.
 
-    print("Searching LinkedIn:",keyword)
+Role: {title}
+Company: {company}
 
-    url=f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location=Worldwide"
+Candidate skills:
+Salesforce Marketing Cloud, SFMC Developer, Automation Studio,
+Journey Builder, Email Studio.
 
-    response=requests.get(url,headers=HEADERS)
+Keep it under 120 words.
+"""
 
-    soup=BeautifulSoup(response.text,"html.parser")
+    try:
 
-    jobs=soup.find_all("a")
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150
+        )
 
-    count=0
+        return response.choices[0].message.content
 
-    for job in jobs:
+    except Exception:
 
-        if count>=MAX_JOBS_PER_SITE:
-            break
+        return "Generated cover letter unavailable"
 
-        title=job.text.strip()
 
-        link=job.get("href")
+def fetch_remoteok():
 
-        if not title:
-            continue
+    url = "https://remoteok.com/api"
 
-        location="Remote"
+    try:
 
-        if not any(loc in location.lower() for loc in PREFERRED_LOCATIONS):
-            continue
+        data = requests.get(url).json()
 
-        log_job("LinkedIn",title,location,link)
+        count = 0
 
-        count+=1
+        for job in data:
 
+            if count > MAX_JOBS_PER_SITE:
+                break
 
-# ---------------- INDEED SEARCH ----------------
+            title = job.get("position")
+            company = job.get("company")
+            link = job.get("url")
+            location = job.get("location")
 
-def search_indeed(keyword):
+            if not title:
+                continue
 
-    print("Searching Indeed:",keyword)
+            if not keyword_match(title):
+                continue
 
-    url=f"https://www.indeed.com/jobs?q={keyword}&l=Remote"
+            if not location_allowed(location):
+                continue
 
-    response=requests.get(url,headers=HEADERS)
+            cover = generate_cover_letter(title, company)
 
-    soup=BeautifulSoup(response.text,"html.parser")
+            jobs.append({
+                "company": company,
+                "title": title,
+                "location": location,
+                "link": link,
+                "cover_letter": cover,
+                "date": datetime.now()
+            })
 
-    jobs=soup.select("a")
+            count += 1
 
-    count=0
+    except Exception as e:
 
-    for job in jobs:
+        print("RemoteOK error:", e)
 
-        if count>=MAX_JOBS_PER_SITE:
-            break
 
-        title=job.text.strip()
+def fetch_arbeitnow():
 
-        link=job.get("href")
+    url = "https://www.arbeitnow.com/api/job-board-api"
 
-        if not title:
-            continue
+    try:
 
-        if link and "/rc/clk" not in link:
-            continue
+        data = requests.get(url).json()["data"]
 
-        full_link="https://www.indeed.com"+link
+        count = 0
 
-        location="Remote"
+        for job in data:
 
-        log_job("Indeed",title,location,full_link)
+            if count > MAX_JOBS_PER_SITE:
+                break
 
-        count+=1
+            title = job.get("title")
+            company = job.get("company_name")
+            location = job.get("location")
+            link = job.get("url")
 
+            if not keyword_match(title):
+                continue
 
-# ---------------- GLASSDOOR SEARCH ----------------
+            if not location_allowed(location):
+                continue
 
-def search_glassdoor(keyword):
+            cover = generate_cover_letter(title, company)
 
-    print("Searching Glassdoor:",keyword)
+            jobs.append({
+                "company": company,
+                "title": title,
+                "location": location,
+                "link": link,
+                "cover_letter": cover,
+                "date": datetime.now()
+            })
 
-    url=f"https://www.glassdoor.com/Job/jobs.htm?sc.keyword={keyword}"
+            count += 1
 
-    response=requests.get(url,headers=HEADERS)
+    except Exception as e:
 
-    soup=BeautifulSoup(response.text,"html.parser")
+        print("Arbeitnow error:", e)
 
-    jobs=soup.select("a")
 
-    count=0
+print("Fetching jobs...")
 
-    for job in jobs:
+fetch_remoteok()
+fetch_arbeitnow()
 
-        if count>=MAX_JOBS_PER_SITE:
-            break
+df = pd.DataFrame(jobs)
 
-        title=job.text.strip()
+if len(df) > 0:
 
-        link=job.get("href")
+    df.drop_duplicates(subset=["title", "company"], inplace=True)
 
-        if not title:
-            continue
+    df.to_csv("jobs.csv", index=False)
 
-        if "jobListing" not in str(link):
-            continue
+    print("Saved", len(df), "jobs")
 
-        full_link="https://www.glassdoor.com"+link
+else:
 
-        location="Remote"
-
-        log_job("Glassdoor",title,location,full_link)
-
-        count+=1
-
-
-# ---------------- MAIN ROBOT ----------------
-
-print("SFMC Job Robot Started")
-
-for keyword in KEYWORDS:
-
-    search_linkedin(keyword)
-
-    search_indeed(keyword)
-
-    search_glassdoor(keyword)
-
-print("Robot finished successfully")
+    print("No jobs found today")
