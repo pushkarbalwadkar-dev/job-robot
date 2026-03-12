@@ -1,13 +1,21 @@
 import requests
 import pandas as pd
+import os
 from datetime import datetime
-from config import KEYWORDS, PREFERRED_LOCATIONS, MAX_JOBS
+from config import KEYWORDS, PREFERRED_LOCATIONS, MAX_RESULTS
 
 jobs = []
 
 def keyword_match(title):
+
     title = title.lower()
-    return any(k in title for k in KEYWORDS)
+
+    for k in KEYWORDS:
+        if k in title:
+            return True
+
+    return False
+
 
 def location_match(location):
 
@@ -16,102 +24,95 @@ def location_match(location):
 
     location = location.lower()
 
-    for loc in PREFERRED_LOCATIONS:
-        if loc in location:
+    for l in PREFERRED_LOCATIONS:
+        if l in location:
             return True
 
     return False
 
 
-def add_job(company, title, location, link):
+def add_job(company,title,location,link):
 
     jobs.append({
-        "company": company,
-        "title": title,
-        "location": location,
-        "link": link,
-        "date": datetime.now()
+        "company":company,
+        "title":title,
+        "location":location,
+        "link":link,
+        "date":datetime.now()
     })
 
 
 def fetch_remoteok():
 
-    print("Fetching RemoteOK")
+    print("Scanning RemoteOK")
 
-    try:
+    data = requests.get("https://remoteok.com/api").json()
 
-        data = requests.get("https://remoteok.com/api").json()
+    for job in data:
 
-        for job in data:
+        title = job.get("position")
+        company = job.get("company")
+        location = job.get("location")
+        link = job.get("url")
 
-            title = job.get("position")
-            company = job.get("company")
-            location = job.get("location")
-            link = job.get("url")
+        if not title:
+            continue
 
-            if not title:
-                continue
-
-            add_job(company, title, location, link)
-
-    except Exception as e:
-        print("RemoteOK error:", e)
+        add_job(company,title,location,link)
 
 
 def fetch_arbeitnow():
 
-    print("Fetching Arbeitnow")
+    print("Scanning Arbeitnow")
 
-    try:
+    data = requests.get(
+        "https://www.arbeitnow.com/api/job-board-api"
+    ).json()["data"]
 
-        data = requests.get("https://www.arbeitnow.com/api/job-board-api").json()
+    for job in data:
 
-        for job in data["data"]:
-
-            title = job.get("title")
-            company = job.get("company_name")
-            location = job.get("location")
-            link = job.get("url")
-
-            add_job(company, title, location, link)
-
-    except Exception as e:
-        print("Arbeitnow error:", e)
+        add_job(
+            job.get("company_name"),
+            job.get("title"),
+            job.get("location"),
+            job.get("url")
+        )
 
 
 def filter_jobs():
 
     filtered = []
 
-    for job in jobs:
+    for j in jobs:
 
-        if not keyword_match(job["title"]):
+        if not keyword_match(j["title"]):
             continue
 
-        if not location_match(job["location"]):
+        if not location_match(j["location"]):
             continue
 
-        filtered.append(job)
+        filtered.append(j)
 
     return filtered
 
 
-print("Starting job robot")
+print("Starting AI Job Hunter")
 
 fetch_remoteok()
 fetch_arbeitnow()
 
-print("Total jobs fetched:", len(jobs))
+print("Jobs collected:",len(jobs))
 
-filtered_jobs = filter_jobs()
+filtered = filter_jobs()
 
-print("Jobs after filtering:", len(filtered_jobs))
+print("Jobs after filtering:",len(filtered))
 
-df = pd.DataFrame(filtered_jobs)
+df = pd.DataFrame(filtered)
 
-if len(df) > MAX_JOBS:
-    df = df.head(MAX_JOBS)
+df = df.drop_duplicates(subset=["title","company"])
 
-df.to_csv("jobs.csv", index=False)
+df = df.head(MAX_RESULTS)
 
-print("Saved jobs.csv successfully")
+df.to_csv("jobs.csv",index=False)
+
+print("Saved jobs.csv")
