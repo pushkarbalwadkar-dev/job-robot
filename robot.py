@@ -1,10 +1,10 @@
-import os
-import time
+import requests
+from bs4 import BeautifulSoup
 import csv
+import os
 from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
+
+# ---------------- CONFIG ----------------
 
 CV_PATH = "Pushkar_Balwadkar_CV.pdf"
 
@@ -17,37 +17,49 @@ KEYWORDS = [
 ]
 
 PREFERRED_LOCATIONS = ["remote", "india", "usa", "europe"]
+
 MAX_JOBS_PER_SITE = 30
 
-# Create CSV if not exists
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
+
+# ---------------- CSV SETUP ----------------
+
 if not os.path.exists("applied_jobs.csv"):
-    with open("applied_jobs.csv","w",newline="") as f:
+    with open("applied_jobs.csv","w",newline="",encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Company","Title","Location","Date","Link"])
+        writer.writerow(["Company","Job Title","Location","Date","Link"])
+
 
 def log_job(company,title,location,link):
-    with open("applied_jobs.csv","a",newline="") as f:
+
+    with open("applied_jobs.csv","a",newline="",encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([company,title,location,datetime.now().strftime("%Y-%m-%d %H:%M"),link])
+        writer.writerow([
+            company,
+            title,
+            location,
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            link
+        ])
+
     print("Logged:",title)
 
-chrome_options = Options()
-chrome_options.add_argument("--headless")
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-dev-shm-usage")
 
-driver = webdriver.Chrome(options=chrome_options)
+# ---------------- LINKEDIN SEARCH ----------------
 
 def search_linkedin(keyword):
 
-    print("Searching LinkedIn for:",keyword)
+    print("Searching LinkedIn:",keyword)
 
-    url=f"https://www.linkedin.com/jobs/search/?keywords={keyword}&location=Worldwide"
+    url=f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location=Worldwide"
 
-    driver.get(url)
-    time.sleep(5)
+    response=requests.get(url,headers=HEADERS)
 
-    jobs=driver.find_elements(By.TAG_NAME,"a")
+    soup=BeautifulSoup(response.text,"html.parser")
+
+    jobs=soup.find_all("a")
 
     count=0
 
@@ -56,35 +68,36 @@ def search_linkedin(keyword):
         if count>=MAX_JOBS_PER_SITE:
             break
 
-        title=job.text
-        link=job.get_attribute("href")
+        title=job.text.strip()
+
+        link=job.get("href")
 
         if not title:
             continue
 
-        if "job" not in link.lower():
-            continue
-
-        location="Unknown"
+        location="Remote"
 
         if not any(loc in location.lower() for loc in PREFERRED_LOCATIONS):
-            location="Remote"
+            continue
 
         log_job("LinkedIn",title,location,link)
 
         count+=1
 
 
+# ---------------- INDEED SEARCH ----------------
+
 def search_indeed(keyword):
 
-    print("Searching Indeed for:",keyword)
+    print("Searching Indeed:",keyword)
 
     url=f"https://www.indeed.com/jobs?q={keyword}&l=Remote"
 
-    driver.get(url)
-    time.sleep(5)
+    response=requests.get(url,headers=HEADERS)
 
-    jobs=driver.find_elements(By.TAG_NAME,"a")
+    soup=BeautifulSoup(response.text,"html.parser")
+
+    jobs=soup.select("a")
 
     count=0
 
@@ -93,30 +106,38 @@ def search_indeed(keyword):
         if count>=MAX_JOBS_PER_SITE:
             break
 
-        title=job.text
-        link=job.get_attribute("href")
+        title=job.text.strip()
+
+        link=job.get("href")
 
         if not title:
             continue
 
-        if "clk" not in link:
+        if link and "/rc/clk" not in link:
             continue
 
-        log_job("Indeed",title,"Remote",link)
+        full_link="https://www.indeed.com"+link
+
+        location="Remote"
+
+        log_job("Indeed",title,location,full_link)
 
         count+=1
 
+
+# ---------------- GLASSDOOR SEARCH ----------------
 
 def search_glassdoor(keyword):
 
-    print("Searching Glassdoor for:",keyword)
+    print("Searching Glassdoor:",keyword)
 
     url=f"https://www.glassdoor.com/Job/jobs.htm?sc.keyword={keyword}"
 
-    driver.get(url)
-    time.sleep(5)
+    response=requests.get(url,headers=HEADERS)
 
-    jobs=driver.find_elements(By.TAG_NAME,"a")
+    soup=BeautifulSoup(response.text,"html.parser")
+
+    jobs=soup.select("a")
 
     count=0
 
@@ -125,26 +146,35 @@ def search_glassdoor(keyword):
         if count>=MAX_JOBS_PER_SITE:
             break
 
-        title=job.text
-        link=job.get_attribute("href")
+        title=job.text.strip()
+
+        link=job.get("href")
 
         if not title:
             continue
 
-        if "jobListing" not in link:
+        if "jobListing" not in str(link):
             continue
 
-        log_job("Glassdoor",title,"Remote",link)
+        full_link="https://www.glassdoor.com"+link
+
+        location="Remote"
+
+        log_job("Glassdoor",title,location,full_link)
 
         count+=1
 
+
+# ---------------- MAIN ROBOT ----------------
+
+print("SFMC Job Robot Started")
 
 for keyword in KEYWORDS:
 
     search_linkedin(keyword)
-    search_indeed(keyword)
-    search_glassdoor(keyword)
 
-driver.quit()
+    search_indeed(keyword)
+
+    search_glassdoor(keyword)
 
 print("Robot finished successfully")
