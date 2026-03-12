@@ -1,0 +1,23 @@
+name: SFMC Job Robot
+
+# When to run the robot
+on:
+  schedule:
+    - cron: "0 2 * * *"  # every day at 2:00 AM
+  workflow_dispatch:  # also allows manual run
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Python
+        uses: actions/setup-python@v4
+
+      - name: Install Requirements
+        run: pip install -r requirements.txt
+
+      - name: Run Robot
+        run: python robot.py
