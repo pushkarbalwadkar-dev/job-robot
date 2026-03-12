@@ -9,7 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import openai
 
-# ---------- CONFIG ----------
+# ---------------- CONFIG ----------------
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_KEY
 CV_PATH = "Pushkar_Balwadkar_CV.pdf"
@@ -20,18 +20,22 @@ KEYWORDS = [
     "SFMC Specialist",
     "Salesforce Architect"
 ]
+MAX_JOBS_PER_SITE = 30
 
-# ---------- LOGGING FUNCTION ----------
+# Preferred locations (case-insensitive)
+PREFERRED_LOCATIONS = ["Remote", "France", "Paris", "USA", "Europe", "Canada", "Australia", "Dubai", "UAE", "Worldwide", "luxembourg", "Netherlands"]
+
+# ---------------- LOGGING ----------------
 def log_application(company, job_title, location, link):
     if job_title and link:
         with open('applied_jobs.csv', mode='a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([company, job_title, location, datetime.now().strftime("%Y-%m-%d %H:%M"), link])
-        print(f"Logged application: {job_title} at {company}")
+        print(f"Logged application: {job_title} at {company} ({location})")
     else:
         print(f"Skipped logging because title or link missing for {company}")
 
-# ---------- AI COVER LETTER ----------
+# ---------------- AI COVER LETTER ----------------
 def generate_cover_letter(job_title, company_name, job_description):
     prompt = f"""
     Write a short personalized cover letter for a {job_title} role at {company_name}.
@@ -49,27 +53,29 @@ def generate_cover_letter(job_title, company_name, job_description):
         print(f"OpenAI API error: {e}")
         return "Dear Hiring Manager, I am very interested in this position."
 
-# ---------- START BROWSER ----------
+# ---------------- START BROWSER ----------------
 chrome_options = Options()
 chrome_options.add_argument("--headless=new")
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 driver = webdriver.Chrome(options=chrome_options)
 
-# ---------- LOGIN CREDENTIALS ----------
+# ---------------- LOGIN CREDENTIALS ----------------
 CREDENTIALS = {
     "linkedin": (os.getenv("LINKEDIN_EMAIL"), os.getenv("LINKEDIN_PASSWORD")),
     "glassdoor": (os.getenv("GLASSDOOR_EMAIL"), os.getenv("GLASSDOOR_PASSWORD")),
     "indeed": (os.getenv("INDEED_EMAIL"), os.getenv("INDEED_PASSWORD")),
 }
 
-# ---------- SITE CONFIG ----------
+# ---------------- SITE CONFIG ----------------
 SITE_CONFIG = {
     "linkedin": {
         "login_url": "https://www.linkedin.com/login",
         "username_field": "username",
         "password_field": "password",
         "job_class": "job-card-list__title",
+        "company_class": "job-card-container__company-name",
+        "location_class": "job-card-container__metadata-item",
         "apply_button_class": "jobs-apply-button",
         "company_name": "LinkedIn Company"
     },
@@ -78,6 +84,8 @@ SITE_CONFIG = {
         "username_field": "userEmail",
         "password_field": "userPassword",
         "job_class": "jobLink",
+        "company_class": None,
+        "location_class": None,
         "apply_button_class": None,
         "company_name": "Glassdoor Company"
     },
@@ -86,12 +94,14 @@ SITE_CONFIG = {
         "username_field": "login-email-input",
         "password_field": "login-password-input",
         "job_class": "jobTitle",
+        "company_class": "companyName",
+        "location_class": "companyLocation",
         "apply_button_class": "iaP",
         "company_name": "Indeed Company"
-    },
+    }
 }
 
-# ---------- LOGIN FUNCTION ----------
+# ---------------- LOGIN FUNCTION ----------------
 def login_site(site_name):
     if site_name not in SITE_CONFIG or site_name not in CREDENTIALS:
         print(f"Skipping login for {site_name} (missing config or credentials)")
@@ -114,12 +124,13 @@ def login_site(site_name):
     except Exception as e:
         print(f"Could not log in to {site_name}: {e}")
 
-# ---------- SEARCH AND APPLY ----------
+# ---------------- SEARCH AND APPLY ----------------
 def search_and_apply(site_name, keyword):
     if site_name not in SITE_CONFIG:
         print(f"Skipping {site_name} (no config)")
         return
     config = SITE_CONFIG[site_name]
+    jobs_applied = 0
 
     # Build search URL
     if site_name == "linkedin":
@@ -134,7 +145,7 @@ def search_and_apply(site_name, keyword):
 
     driver.get(search_url)
 
-    # ---------- EXPLICIT WAIT FOR JOB CARDS ----------
+    # Explicit wait for jobs
     try:
         WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located((By.CLASS_NAME, config["job_class"]))
@@ -144,16 +155,41 @@ def search_and_apply(site_name, keyword):
         print(f"Could not load jobs for {site_name}: {e}")
         return
 
-    for job_el in jobs[:3]:  # first 3 jobs per keyword
+    for job_el in jobs:
+        if jobs_applied >= MAX_JOBS_PER_SITE:
+            break
         try:
             job_title = job_el.text.strip()
             job_link = job_el.get_attribute("href") or job_el.get_attribute("data-job-link") or None
+
+            # Company
             company_name = config["company_name"]
+            try:
+                if config["company_class"]:
+                    company_elem = job_el.find_element(By.CLASS_NAME, config["company_class"])
+                    company_name = company_elem.text.strip()
+            except:
+                pass
+
+            # Location
             location = "Remote"
+            try:
+                if config["location_class"]:
+                    location_elem = job_el.find_element(By.CLASS_NAME, config["location_class"])
+                    location = location_elem.text.strip()
+            except:
+                pass
+
+            # Skip if location not in preferred
+            if not any(pref.lower() in location.lower() for pref in PREFERRED_LOCATIONS):
+                print(f"Skipped {job_title} at {company_name} due to location: {location}")
+                continue
+
+            # AI Cover Letter
             job_description = "Job description placeholder"
             cover_letter = generate_cover_letter(job_title, company_name, job_description)
 
-            # Easy Apply Simulation
+            # Easy Apply
             if config["apply_button_class"]:
                 try:
                     job_el.click()
@@ -174,10 +210,12 @@ def search_and_apply(site_name, keyword):
                     print(f"Skipped auto-apply for {job_title} at {company_name}: {e}")
 
             log_application(company_name, job_title, location, job_link)
+            jobs_applied += 1
+
         except Exception as e:
             print(f"Error processing job: {e}")
 
-# ---------- MAIN LOOP ----------
+# ---------------- MAIN LOOP ----------------
 with open("sites.txt", "r") as f:
     sites = [line.strip().lower() for line in f.readlines() if line.strip()]
 
