@@ -10,7 +10,6 @@ import openai
 # ---------- CONFIG ----------
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_KEY
-
 CV_PATH = "Pushkar_Balwadkar_CV.pdf"
 KEYWORDS = ["Salesforce Marketing Cloud", "SFMC Developer", "Salesforce Marketing Cloud Consultant", "SFMC Specialist", "Salesforce Architect"]
 
@@ -42,92 +41,97 @@ chrome_options.add_argument("--disable-dev-shm-usage")
 driver = webdriver.Chrome(options=chrome_options)
 
 # ---------- LOGIN CREDENTIALS ----------
-LINKEDIN_EMAIL = os.getenv("LINKEDIN_EMAIL")
-LINKEDIN_PASSWORD = os.getenv("LINKEDIN_PASSWORD")
-INDEED_EMAIL = os.getenv("INDEED_EMAIL")
-INDEED_PASSWORD = os.getenv("INDEED_PASSWORD")
-GLASSDOOR_EMAIL = os.getenv("GLASSDOOR_EMAIL")
-GLASSDOOR_PASSWORD = os.getenv("GLASSDOOR_PASSWORD")
+CREDENTIALS = {
+    "linkedin": (os.getenv("LINKEDIN_EMAIL"), os.getenv("LINKEDIN_PASSWORD")),
+    "glassdoor": (os.getenv("GLASSDOOR_EMAIL"), os.getenv("GLASSDOOR_PASSWORD")),
+    "indeed": (os.getenv("INDEED_EMAIL"), os.getenv("INDEED_PASSWORD")),
+    # Add more secrets if other sites require login
+}
 
-# ---------- LINKEDIN LOGIN ----------
-driver.get("https://www.linkedin.com/login")
-time.sleep(2)
-driver.find_element(By.ID, "username").send_keys(LINKEDIN_EMAIL)
-driver.find_element(By.ID, "password").send_keys(LINKEDIN_PASSWORD)
-driver.find_element(By.XPATH, "//button[@type='submit']").click()
-time.sleep(3)
+# ---------- SITE SPECIFIC CONFIG ----------
+SITE_CONFIG = {
+    "linkedin": {"login_url":"https://www.linkedin.com/login", "username_field":"username", "password_field":"password", "job_class":"job-card-list__title", "apply_button_class":"jobs-apply-button", "company_name":"LinkedIn Company"},
+    "glassdoor": {"login_url":"https://www.glassdoor.com/profile/login_input.htm", "username_field":"userEmail", "password_field":"userPassword", "job_class":"jobLink", "apply_button_class":None, "company_name":"Glassdoor Company"},
+    "indeed": {"login_url":"https://secure.indeed.com/account/login", "username_field":"login-email-input", "password_field":"login-password-input", "job_class":"jobTitle", "apply_button_class":"iaP", "company_name":"Indeed Company"},
+    # Add config for other sites
+}
 
-# ---------- GLASSDOOR LOGIN ----------
-driver.get("https://www.glassdoor.com/profile/login_input.htm")
-time.sleep(2)
-driver.find_element(By.ID, "userEmail").send_keys(GLASSDOOR_EMAIL)
-driver.find_element(By.ID, "userPassword").send_keys(GLASSDOOR_PASSWORD)
-driver.find_element(By.NAME, "submit").click()
-time.sleep(3)
+# ---------- LOGIN FUNCTION ----------
+def login_site(site_name):
+    if site_name not in SITE_CONFIG or site_name not in CREDENTIALS:
+        print(f"No login info for {site_name}, skipping login")
+        return
+    email, password = CREDENTIALS[site_name]
+    config = SITE_CONFIG[site_name]
+    driver.get(config["login_url"])
+    time.sleep(2)
+    driver.find_element(By.ID, config["username_field"]).send_keys(email)
+    driver.find_element(By.ID, config["password_field"]).send_keys(password)
+    driver.find_element(By.XPATH, "//button[@type='submit']").click()
+    time.sleep(3)
+    print(f"Logged in to {site_name}")
 
-# ---------- INDEED LOGIN ----------
-driver.get("https://secure.indeed.com/account/login")
-time.sleep(2)
-driver.find_element(By.ID, "login-email-input").send_keys(INDEED_EMAIL)
-driver.find_element(By.ID, "login-password-input").send_keys(INDEED_PASSWORD)
-driver.find_element(By.ID, "login-submit-button").click()
-time.sleep(3)
+# ---------- SEARCH AND APPLY FUNCTION ----------
+def search_and_apply(site_name, keyword):
+    if site_name not in SITE_CONFIG:
+        print(f"No config for {site_name}, skipping")
+        return
+    config = SITE_CONFIG[site_name]
+    
+    # Create search URL
+    if site_name == "linkedin":
+        search_url = f"https://www.linkedin.com/jobs/search/?keywords={keyword}&f_LF=f_AL"
+    elif site_name == "glassdoor":
+        search_url = f"https://www.glassdoor.com/Job/jobs.htm?sc.keyword={keyword}&locT=C&locId=0"
+    elif site_name == "indeed":
+        search_url = f"https://www.indeed.com/jobs?q={keyword}&l=Remote"
+    else:
+        print(f"Search URL not defined for {site_name}, skipping")
+        return
 
-# ---------- JOB SEARCH AND AUTO-APPLY FUNCTION ----------
-def search_and_apply(site_name, search_url, job_element_class, company_name_placeholder="Company", location_placeholder="Remote"):
     driver.get(search_url)
     time.sleep(3)
-    jobs = driver.find_elements(By.CLASS_NAME, job_element_class)
-    for job_el in jobs[:3]:  # first 3 jobs to avoid overload
+    jobs = driver.find_elements(By.CLASS_NAME, config["job_class"])
+    for job_el in jobs[:3]:  # first 3 jobs per site per keyword
         try:
             job_title = job_el.text
             job_link = job_el.get_attribute("href")
-            company_name = company_name_placeholder
-            location = location_placeholder
-            job_description = "Job description placeholder"  # TODO: scrape description if possible
-            
-            # Generate AI cover letter
+            company_name = config["company_name"]
+            location = "Remote"
+            job_description = "Job description placeholder"
             cover_letter = generate_cover_letter(job_title, company_name, job_description)
             
-            # ---------- AUTO-APPLY SIMULATION ----------
-            # NOTE: For LinkedIn/Indeed/Glassdoor, filling forms and attaching CV requires Selenium steps
-            # Example placeholder:
-            # driver.get(job_link)
-            # driver.find_element(...).click()  # click Easy Apply
-            # driver.find_element(...).send_keys(CV_PATH)
-            # driver.find_element(...).send_keys(cover_letter)
-            # driver.find_element(...).submit()
+            # EASY APPLY SIMULATION
+            if config["apply_button_class"]:
+                try:
+                    job_el.click()
+                    time.sleep(2)
+                    apply_btn = driver.find_element(By.CLASS_NAME, config["apply_button_class"])
+                    apply_btn.click()
+                    time.sleep(2)
+                    driver.find_element(By.XPATH, "//input[@type='file']").send_keys(os.path.abspath(CV_PATH))
+                    time.sleep(1)
+                    textarea = driver.find_element(By.TAG_NAME, "textarea")
+                    textarea.send_keys(cover_letter)
+                    time.sleep(1)
+                    driver.find_element(By.XPATH, "//button[contains(text(),'Submit')]").click()
+                    time.sleep(2)
+                except:
+                    print(f"Skipped auto-apply for {job_title} at {company_name}")
             
-            # Log application in CSV
             log_application(company_name, job_title, location, job_link)
             print(f"Applied to: {job_title} at {company_name}")
-            
         except Exception as e:
             print(f"Error applying to job: {e}")
 
-# ---------- LINKEDIN JOBS ----------
-for kw in KEYWORDS:
-    search_and_apply("LinkedIn",
-                     f"https://www.linkedin.com/jobs/search/?keywords={kw}&f_LF=f_AL",
-                     "job-card-list__title",
-                     "LinkedIn Company",
-                     "Remote")
+# ---------- MAIN LOOP ----------
+with open("sites.txt", "r") as f:
+    sites = [line.strip().lower() for line in f.readlines() if line.strip()]
 
-# ---------- GLASSDOOR JOBS ----------
-for kw in KEYWORDS:
-    search_and_apply("Glassdoor",
-                     f"https://www.glassdoor.com/Job/jobs.htm?sc.keyword={kw}&locT=C&locId=0",
-                     "jobLink",
-                     "Glassdoor Company",
-                     "Remote")
-
-# ---------- INDEED JOBS ----------
-for kw in KEYWORDS:
-    search_and_apply("Indeed",
-                     f"https://www.indeed.com/jobs?q={kw}&l=Remote",
-                     "jobTitle",
-                     "Indeed Company",
-                     "Remote")
+for site in sites:
+    login_site(site)
+    for kw in KEYWORDS:
+        search_and_apply(site, kw)
 
 driver.quit()
-print("Robot finished running!")
+print("Robot finished running all sites!")
