@@ -146,7 +146,7 @@ fetch_arbeitnow()
 
 print("Total jobs collected:", len(jobs))
 
-filtered_jobs = filter_jobs()
+filtered_jobs = jobs
 
 print("Jobs after filtering:", len(filtered_jobs))
 
