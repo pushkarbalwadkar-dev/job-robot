@@ -38,9 +38,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python robot.py
 
-      # 5️⃣ Upload applied_jobs.csv for download
+      # 5️⃣ Upload applied_jobs.csv as artifact (using v4)
       - name: Upload applied_jobs.csv
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: applied-jobs
           path: applied_jobs.csv
